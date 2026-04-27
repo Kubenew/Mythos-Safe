@@ -1,0 +1,13 @@
+{
+  "id": "string",
+  "domain": "math|code|reasoning",
+  "prompt": "string",
+  "expected": "string|null",
+  "verifier": "math_exact|unit_test",
+  "difficulty": "int",
+  "tags": [
+    "list",
+    "of",
+    "strings"
+  ]
+}

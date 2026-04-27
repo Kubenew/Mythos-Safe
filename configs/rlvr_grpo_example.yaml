@@ -1,0 +1,17 @@
+rlvr:
+  algorithm: GRPO
+  group_size: 8
+  kl_beta: 0.02
+  max_steps: 200000
+  rollout_temperature: 0.8
+  max_tokens: 4096
+
+reward:
+  math_exact_match: 1.0
+  unit_test_pass: 1.0
+  format_compliance: 0.1
+  safety_penalty: -2.0
+
+logging:
+  save_rollouts: true
+  audit_rate: 0.02
