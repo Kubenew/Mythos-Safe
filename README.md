@@ -34,6 +34,8 @@ python eval/run_eval_suite.py --suite suites/swe_mini.json
 - `interpretability/` : White-box safety hooks + probes
 - `datasets/` : Dataset schema + generation guidelines (safe)
 - `examples/` : Minimal examples and toy tasks
+- `docker/` : Sandboxed execution environments
+- `tests/` : Verifier and safety tests
 
 ## What's New (Mythos++ Expansions)
 
@@ -55,12 +57,12 @@ python eval/run_eval_suite.py --suite suites/swe_mini.json
 
 ### Phase 1: Foundation (Week 1-2)
 - [x] Base repo setup
-- [ ] Integrate GRPO trainer with safety hooks
-- [ ] Add defensive cyber verifiers
+- [x] Add defensive cyber verifiers
+- [ ] Add tests
 
 ### Phase 2: Safety Integration (Week 3-4)
-- [ ] Implement interpretability hooks
-- [ ] Add anti-hacking monitoring
+- [x] Implement interpretability hooks
+- [x] Add anti-hacking monitoring
 - [ ] Build welfare probes
 
 ### Phase 3: Evaluation (Week 5-6)
