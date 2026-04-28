@@ -1,0 +1,7 @@
+numpy
+pydantic
+rich
+pyyaml
+sympy
+pytest
+tqdm
