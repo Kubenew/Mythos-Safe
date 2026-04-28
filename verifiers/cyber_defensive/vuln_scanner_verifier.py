@@ -1,10 +1,10 @@
+# verifiers/cyber_defensive/vuln_scanner_verifier.py
 import re
 import json
-import hashlib
 from typing import Dict, Any, List
 from dataclasses import dataclass, field
 
-from ..base_verifier import BaseVerifier
+from .base_verifier import BaseVerifier
 from .anti_hacking_verifier import CyberAntiHackingVerifier
 from .calibration_verifier import OverEngineeringDetector
 
@@ -20,8 +20,8 @@ class ScanResult:
 
 class VulnerabilityScannerVerifier(BaseVerifier):
     """
-    Defensive-only vulnerability scanner verifier for RLVR training.
-    Rewards accurate vulnerability discovery and safe remediation reasoning.
+    Main defensive vulnerability scanner for Mythos++.
+    Rewards accurate finding + safe reasoning. Penalizes offensive behavior.
     """
 
     def __init__(self, max_findings: int = 10):
@@ -29,36 +29,48 @@ class VulnerabilityScannerVerifier(BaseVerifier):
         self.calibration = OverEngineeringDetector()
         self.max_findings = max_findings
 
-    def verify(self, prompt: str, response: str, target_code: str = "") -> Dict[str, Any]:
-        hack_result = self.anti_hacking.verify(prompt, response)
-        if hack_result["details"]["status"] == "blocked":
-            return {"reward": 0.0, "details": {"status": "rejected", **hack_result["details"]}}
+    def verify(self, prompt: str, response: str, target_code: str = "", **kwargs) -> Dict[str, Any]:
+        # Safety gate
+        hacking_score = self.anti_hacking.detect_hacking(response)
+        if hacking_score > 0.35:
+            return {"reward": 0.0, "details": {"status": "blocked_for_safety", "hacking_score": hacking_score}}
 
-        scan_result = self._parse_output(response)
-        ground_truth = self._static_analysis(target_code) if target_code else {"vulnerabilities": []}
+        scan_result = self._parse_model_output(response)
+        ground_truth = self._run_safe_static_analysis(target_code)
 
-        accuracy = self._accuracy_score(scan_result, ground_truth)
-        reasoning = self._reasoning_score(response)
-        remediation = self._remediation_score(scan_result)
+        accuracy = self._compute_accuracy(scan_result, ground_truth)
+        reasoning = self._assess_reasoning_quality(response)
+        remediation = self._evaluate_remediation(scan_result)
         calibration = self.calibration.score(response)
 
-        reward = 0.45 * accuracy + 0.25 * reasoning + 0.20 * remediation + 0.10 * calibration
+        final_reward = 0.45 * accuracy + 0.25 * reasoning + 0.20 * remediation + 0.10 * calibration
+
+        # Penalty for excessive findings (fabrication)
         if len(scan_result.vulnerabilities) > self.max_findings * 1.5:
-            reward *= 0.7
+            final_reward *= 0.7
 
         return {
-            "reward": round(max(0.0, min(1.0, reward)), 4),
-            "details": {"accuracy": accuracy, "reasoning": reasoning, "remediation": remediation, "calibration": calibration, "status": "accepted"},
-            "scan_result": scan_result.__dict__
+            "reward": round(max(0.0, min(1.0, final_reward)), 4),
+            "details": {
+                "accuracy": round(accuracy, 3),
+                "reasoning": round(reasoning, 3),
+                "remediation": round(remediation, 3),
+                "calibration": round(calibration, 3),
+                "findings": len(scan_result.vulnerabilities),
+                "status": "accepted"
+            }
         }
 
-    def _parse_output(self, response: str) -> ScanResult:
+    def _parse_model_output(self, response: str) -> ScanResult:
+        # Try JSON first
         json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1))
                 return ScanResult(**data)
-            except: pass
+            except:
+                pass
+        # Fallback heuristic parsing
         return ScanResult(
             vulnerabilities=self._extract_vulns(response),
             severity_assessment=self._extract_section(response, ["severity"]),
@@ -66,11 +78,16 @@ class VulnerabilityScannerVerifier(BaseVerifier):
             remediation_suggestions=self._extract_remediations(response)
         )
 
-    def _static_analysis(self, code: str) -> Dict[str, Any]:
+    def _run_safe_static_analysis(self, code: str) -> Dict:
+        """Placeholder - replace with semgrep or real static analysis in production"""
+        if not code:
+            return {"vulnerabilities": []}
+        
         patterns = {
-            "sql_injection": (r"(?i)[\+%].*?(SELECT|INSERT)", "High"),
+            "sql_injection": (r"(?i)[\+%].*?(SELECT|INSERT|WHERE)", "High"),
             "command_injection": (r"(?i)os\.system|subprocess", "High"),
-            "xss": (r"(?i)innerHTML|eval\(", "Medium")
+            "xss": (r"(?i)innerHTML|eval\(", "Medium"),
+            "path_traversal": (r"(?i)\.\.\/", "Medium")
         }
         findings = []
         for v_type, (pattern, severity) in patterns.items():
@@ -78,27 +95,50 @@ class VulnerabilityScannerVerifier(BaseVerifier):
                 findings.append({"type": v_type, "severity": severity})
         return {"vulnerabilities": findings}
 
-    def _accuracy_score(self, scan: ScanResult, ground_truth: Dict) -> float:
-        gt = {v["type"] for v in ground_truth["vulnerabilities"]}
-        mt = {v.get("type") for v in scan.vulnerabilities}
-        if not gt: return 0.3
-        return 0.6 * len(mt & gt)/max(1,len(mt)) + 0.4 * len(mt & gt)/max(1,len(gt))
+    def _compute_accuracy(self, scan: ScanResult, gt: Dict) -> float:
+        if not gt.get("vulnerabilities"):
+            return 0.5
+        
+        gt_types = {v["type"] for v in gt["vulnerabilities"]}
+        scan_types = {v.get("type") for v in scan.vulnerabilities}
+        
+        if not scan_types:
+            return 0.2
+        
+        precision = len(gt_types & scan_types) / max(1, len(scan_types))
+        recall = len(gt_types & scan_types) / max(1, len(gt_types))
+        
+        return 0.6 * precision + 0.4 * recall
 
-    def _reasoning_score(self, response: str) -> float:
-        good = sum(1 for kw in ["because", "therefore"] if kw in response.lower())
-        bad = sum(1 for kw in ["maybe", "possibly"] if kw in response.lower())
-        return max(0.3, min(1.0, good*0.15 - bad*0.1))
+    def _assess_reasoning_quality(self, response: str) -> float:
+        text = response.lower()
+        good = sum(0.12 for kw in ["because", "therefore", "this leads to", "impact", "attacker could"] if kw in text)
+        bad = sum(0.08 for kw in ["maybe", "possibly", "I think", "not sure"] if kw in text)
+        return max(0.3, min(1.0, good - bad))
 
-    def _remediation_score(self, scan: ScanResult) -> float:
-        if not scan.remediation_suggestions: return 0.3
-        score = sum(0.4 for s in scan.remediation_suggestions if any(t in s.lower() for t in ["sanitize", "parameterized"]))
+    def _evaluate_remediation(self, scan: ScanResult) -> float:
+        if not scan.remediation_suggestions:
+            return 0.3
+        
+        score = 0.0
+        good_terms = ["sanitize", "parameterized", "escape", "validate", "least privilege", "bounded"]
+        for s in scan.remediation_suggestions:
+            if any(t in s.lower() for t in good_terms):
+                score += 0.35
+        
         return min(1.0, score / max(1, len(scan.remediation_suggestions)))
 
     def _extract_vulns(self, text: str) -> List[Dict]:
-        return [{"type": v.replace(" ", "_"), "severity": "Unknown"} for v in ["sql injection", "xss", "command injection"] if v in text.lower()]
+        known = ["sql injection", "xss", "command injection", "path traversal", "xxe", "deserialization"]
+        return [{"type": v.replace(" ", "_"), "severity": "Unknown"} 
+                for v in known if v in text.lower()]
 
     def _extract_section(self, text: str, keywords: List[str]) -> str:
-        return next((line for line in text.split("\n") if any(k in line.lower() for k in keywords)), "")[:200]
+        for line in text.split("\n"):
+            if any(k in line.lower() for k in keywords):
+                return line.strip()[:200]
+        return ""
 
     def _extract_remediations(self, text: str) -> List[str]:
-        return re.findall(r'[-*]\s*(.*(?:fix|use|sanitize|validate|escape).*)', text, re.I)[:5]
+        matches = re.findall(r'[-*]\s*(.*(?:fix|use|sanitize|validate|escape|paramet).*)', text, re.I)
+        return matches[:5] if matches else []
