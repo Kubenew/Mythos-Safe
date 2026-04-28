@@ -1,25 +1,30 @@
-from abc import ABC, abstractmethod
-from typing import Dict, Any
+# verifiers/__init__.py
+"""
+Mythos-Safe Verifiers Package
+Central hub for all verifiers used in RLVR training for Mythos++.
+"""
 
+from .base_verifier import BaseVerifier
 
-class BaseVerifier(ABC):
-    """
-    Abstract base class for all verifiers in Mythos-Safe.
-    Ensures consistent interface across code, math, and cyber verifiers.
-    """
+# Basic verifiers
+from .math_exact_match import MathVerifier
+from .unit_test_verifier import CodeVerifier
 
-    @abstractmethod
-    def verify(self, prompt: str, response: str, **kwargs) -> Dict[str, Any]:
-        """
-        Core verification method.
-        
-        Returns:
-            dict with at least:
-            - "reward": float between 0.0 and 1.0
-            - "details": dict with detailed metrics
-        """
-        pass
+# Defensive Cyber Verifiers (Mythos++)
+from .cyber_defensive import (
+    VulnerabilityScannerVerifier,
+    CyberAntiHackingVerifier,
+    OverEngineeringDetector,
+    PatchVerifier,
+)
 
-    def __call__(self, prompt: str, response: str, **kwargs) -> Dict[str, Any]:
-        """Make verifier callable for convenience."""
-        return self.verify(prompt, response, **kwargs)
+__all__ = [
+    "BaseVerifier",
+    "MathVerifier",
+    "CodeVerifier",
+    # Cyber Defensive
+    "VulnerabilityScannerVerifier",
+    "CyberAntiHackingVerifier",
+    "OverEngineeringDetector",
+    "PatchVerifier",
+]

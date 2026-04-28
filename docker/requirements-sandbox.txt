@@ -1,0 +1,3 @@
+semgrep>=1.80.0
+bandit
+pyright

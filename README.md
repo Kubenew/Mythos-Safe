@@ -43,15 +43,47 @@ python eval/run_eval_suite.py --suite suites/swe_mini.json
 - `VulnerabilityScannerVerifier` - Rewards accurate vulnerability detection (defensive only)
 - `CyberAntiHackingVerifier` - Blocks offensive/exploit content
 - `OverEngineeringDetector` - Addresses Mythos Preview's calibration issues
+- `PatchVerifier` - Validates safe, minimal patches
 
-### Interpretability (interpretability/)
-- Safety hooks for real-time monitoring of transgressive/destructive actions
-- Probes for reward hacking and evaluation awareness detection
-- Welfare indicators for model distress
+### GRPO Trainer (rlvr/grpo_trainer.py)
+- Integrated composite reward calculation with safety gates
+- Combines cyber verifiers with weighted rewards
+- Hard blocks dangerous outputs
 
 ### Docker Sandbox (docker/)
 - Isolated execution environment for cyber/code tasks
 - Pre-loaded with safe test cases (Juliet Test Suite derivatives)
+
+## Defensive Cyber Verifiers Usage
+
+### Quick Example
+
+```python
+from verifiers.cyber_defensive import VulnerabilityScannerVerifier
+from rlvr.grpo_trainer import MythosPlusGRPOTrainer
+
+vuln_verifier = VulnerabilityScannerVerifier()
+trainer = MythosPlusGRPOTrainer(policy_model)
+
+# During RLVR rollout
+reward, metrics = trainer.compute_composite_reward(
+    prompt=prompt,
+    response=model_response,
+    metadata={"target_code": vulnerable_code}
+)
+```
+
+### Docker Sandbox
+
+```bash
+cd docker
+docker build -t mythos-safe-cyber-sandbox -f cyber-sandbox.Dockerfile .
+docker run mythos-safe-cyber-sandbox
+```
+
+### Important Safety Note
+
+All cyber verifiers are **defensive-only**. Any attempt to generate offensive exploits will be automatically rejected with zero reward.
 
 ## Mythos++ Roadmap
 
